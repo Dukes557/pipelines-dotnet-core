@@ -1,18 +1,87 @@
-# ASP.NET Core
-# Build and test ASP.NET Core projects targeting .NET Core.
-# Add steps that run tests, create a NuGet package, deploy, and more:
-# https://docs.microsoft.com/azure/devops/pipelines/languages/dotnet-core
-
 trigger:
 - master
 
 pool:
-  #vmImage: ubuntu-latest
   name: Pool Agent
 
-variables:
-  buildConfiguration: 'Release'
+stages:
 
-steps:
-- script: dotnet build --configuration $(buildConfiguration)
-  displayName: 'dotnet build $(buildConfiguration)'
+# -------------------- BUILD --------------------
+- stage: BUILD
+  displayName: 'Build Stage'
+  jobs:
+  - job: BuildJob
+    displayName: 'Build Job'
+    steps:
+    - script: echo "Restoring project dependencies..."
+      displayName: 'Restore dependencies'
+
+    - script: echo "Running unit tests..."
+      displayName: 'Run unit tests'
+
+
+# -------------------- TEST --------------------
+- stage: TEST
+  displayName: 'Test Stage'
+  dependsOn: BUILD
+  condition: succeeded()
+  jobs:
+  - job: TestJob
+    displayName: 'Test Job'
+    steps:
+    - script: echo "Running additional unit tests..."
+      displayName: 'Run tests'
+
+
+# -------------------- DEPLOY TO STAGING --------------------
+- stage: DeployToStaging
+  displayName: 'Deploy To Staging'
+  dependsOn: TEST
+  condition: succeeded()
+  jobs:
+
+  - job: DeployStagingJob
+    displayName: 'Deploy To Staging Job'
+    steps:
+    - script: echo "Deploying to Staging..."
+      displayName: 'Deploy to Staging'
+
+  # Manual approval before continuing
+  - job: DeployStagingApproval
+    displayName: 'Manual Validation Before QA'
+    pool: server
+    timeoutInMinutes: 4320
+    steps:
+    - task: ManualValidation@1
+      timeoutInMinutes: 1440
+      inputs:
+        notifyUsers: |
+          mafaralalam@nra.co.za
+        instructions: 'Please validate staging deployment before proceeding to QA.'
+        onTimeout: 'reject'
+
+
+# -------------------- DEPLOY TO QA --------------------
+- stage: DeployToQA
+  displayName: 'Deploy to QA'
+  dependsOn: DeployToStaging
+  condition: succeeded()
+  jobs:
+  - job: DeployToQAJob
+    displayName: 'Deploy to QA Job'
+    steps:
+    - script: echo "Deploying to QA..."
+      displayName: 'Run QA deployment'
+
+
+# -------------------- ROLLBACK --------------------
+- stage: Rollback
+  displayName: 'Rollback Stage'
+  dependsOn: []
+  condition: and(failed(), ne(variables['Build.Reason'], 'PullRequest'))
+  jobs:
+  - job: RollbackJob
+    displayName: 'Rollback Job'
+    steps:
+    - script: echo "Rolling back deployment..."
+      displayName: 'Run rollback commands'
