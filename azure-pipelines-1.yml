@@ -2,54 +2,76 @@ trigger:
 - main
 
 pool:
-  name: 'Pool Agent'
+  name: 'Pool Agent'   # Use Microsoft hosted agent
 
 variables:
-  solution: '**/*.sln'
-  buildPlatform: 'Any CPU'
   buildConfiguration: 'Release'
 
 stages:
 
-# ========================
-# STAGE 1 - Build
-# ========================
+# =====================================
+# STAGE 1 - BUILD
+# =====================================
 - stage: Build
   displayName: 'Build Stage'
   jobs:
   - job: BuildJob
-    displayName: 'Build Solution'
+    displayName: 'Restore and Build'
     steps:
 
-    - task: NuGetToolInstaller@1
+    # Ensure repo is checked out
+    - checkout: self
 
-    - task: NuGetCommand@2
+    # Show files (helps debugging if path issues occur)
+    - script: |
+        echo "Listing source directory contents"
+        dir $(Build.SourcesDirectory) /s
+      displayName: 'Debug - List files'
+
+    # Install .NET SDK (safe for .NET Core / .NET 6+)
+    - task: UseDotNet@2
       inputs:
-        restoreSolution: '$(solution)'
+        packageType: 'sdk'
+        version: '8.x'
+        installationPath: $(Agent.ToolsDirectory)/dotnet
 
-    - task: VSBuild@1
+    # Restore
+    - task: DotNetCoreCLI@2
+      displayName: 'Restore'
       inputs:
-        solution: '$(solution)'
-        vsVersion: '17.0'     # VS 2022
-        platform: '$(buildPlatform)'
-        configuration: '$(buildConfiguration)'
-        clean: true
+        command: 'restore'
+        projects: '**/*.csproj'
 
-    - task: VSTest@2
+    # Build
+    - task: DotNetCoreCLI@2
+      displayName: 'Build'
       inputs:
-        platform: '$(buildPlatform)'
-        configuration: '$(buildConfiguration)'
+        command: 'build'
+        projects: '**/*.csproj'
+        arguments: '--configuration $(buildConfiguration)'
 
+    # Publish
+    - task: DotNetCoreCLI@2
+      displayName: 'Publish'
+      inputs:
+        command: 'publish'
+        publishWebProjects: false
+        projects: '**/*.csproj'
+        arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)'
+        zipAfterPublish: false
+
+    # Publish artifact
     - task: PublishPipelineArtifact@1
+      displayName: 'Publish Build Artifact'
       inputs:
-        targetPath: '$(Pipeline.Workspace)'
+        targetPath: '$(Build.ArtifactStagingDirectory)'
         artifact: 'build'
         publishLocation: 'pipeline'
 
 
-# ========================
-# STAGE 2 - Deploy to QA
-# ========================
+# =====================================
+# STAGE 2 - DEPLOY TO QA
+# =====================================
 - stage: DeployToQA
   displayName: 'Deploy to QA'
   dependsOn: Build
@@ -57,14 +79,14 @@ stages:
   jobs:
 
   - job: DeployQAJob
-    displayName: 'Deploy to QA Job'
+    displayName: 'Deploy to QA'
     steps:
     - script: |
-        echo "Deploying to QA..."
+        echo "Deploying to QA environment..."
       displayName: 'Run QA deployment commands'
 
   - job: WaitForValidation
-    displayName: 'Wait for external validation'
+    displayName: 'Manual Approval'
     dependsOn: DeployQAJob
     pool: server
     timeoutInMinutes: 4320
@@ -75,13 +97,13 @@ stages:
         notifyUsers: |
           DiphokoS@nra.co.za
           Mafaralalam@nra.co.za
-        instructions: 'Please validate the build configuration and resume'
+        instructions: 'Please validate QA deployment before Production.'
         onTimeout: 'reject'
 
 
-# ========================
-# STAGE 3 - Deploy to Production
-# ========================
+# =====================================
+# STAGE 3 - DEPLOY TO PRODUCTION
+# =====================================
 - stage: DeployToProduction
   displayName: 'Deploy to Production'
   dependsOn: DeployToQA
@@ -89,31 +111,24 @@ stages:
   jobs:
 
   - job: DeployProductionJob
-    displayName: 'Deploy to Production Job'
+    displayName: 'Deploy to Production'
     steps:
     - script: |
-        echo "Deploying to production..."
+        echo "Deploying to Production environment..."
       displayName: 'Run production deployment commands'
 
-    - task: PublishPipelineArtifact@1
-      displayName: 'Publish pipeline artifact'
-      inputs:
-        targetPath: '$(Pipeline.Workspace)'
-        artifact: 'prod'
-        publishLocation: 'pipeline'
 
-
-# ========================
-# STAGE 4 - Rollback
-# ========================
+# =====================================
+# STAGE 4 - ROLLBACK (If Production Fails)
+# =====================================
 - stage: Rollback
   displayName: 'Rollback Stage'
   dependsOn: DeployToProduction
   condition: failed()
   jobs:
   - job: RollbackJob
-    displayName: 'Rollback Job'
+    displayName: 'Rollback Deployment'
     steps:
     - script: |
-        echo "Rolling back the deployment..."
+        echo "Rolling back production deployment..."
       displayName: 'Run rollback commands'
