@@ -4,34 +4,64 @@ trigger:
 pool:
   name: 'Pool Agent'
 
+variables:
+  solution: '**/*.sln'
+  buildPlatform: 'Any CPU'
+  buildConfiguration: 'Release'
+
 stages:
 
 # ========================
-# STAGE 1 - Deploy to QA
+# STAGE 1 - Build
+# ========================
+- stage: Build
+  displayName: 'Build Stage'
+  jobs:
+  - job: BuildJob
+    displayName: 'Build Solution'
+    steps:
+
+    - task: NuGetToolInstaller@1
+
+    - task: NuGetCommand@2
+      inputs:
+        restoreSolution: '$(solution)'
+
+    - task: VSBuild@1
+      inputs:
+        solution: '$(solution)'
+        vsVersion: '17.0'     # VS 2022
+        platform: '$(buildPlatform)'
+        configuration: '$(buildConfiguration)'
+        clean: true
+
+    - task: VSTest@2
+      inputs:
+        platform: '$(buildPlatform)'
+        configuration: '$(buildConfiguration)'
+
+    - task: PublishPipelineArtifact@1
+      inputs:
+        targetPath: '$(Pipeline.Workspace)'
+        artifact: 'build'
+        publishLocation: 'pipeline'
+
+
+# ========================
+# STAGE 2 - Deploy to QA
 # ========================
 - stage: DeployToQA
   displayName: 'Deploy to QA'
+  dependsOn: Build
+  condition: succeeded()
   jobs:
 
   - job: DeployQAJob
     displayName: 'Deploy to QA Job'
     steps:
-    - checkout: self
-
     - script: |
         echo "Deploying to QA..."
       displayName: 'Run QA deployment commands'
-
-    # Run Tests in QA
-    - task: VSTest@2
-      displayName: 'Run Automated Tests'
-      inputs:
-        testSelector: 'testAssemblies'
-        testAssemblyVer2: |
-          **\*test*.dll
-          !**\*TestAdapter.dll
-          !**\obj\**
-        runSettingsFile: 'test.runsettings'
 
   - job: WaitForValidation
     displayName: 'Wait for external validation'
@@ -50,7 +80,7 @@ stages:
 
 
 # ========================
-# STAGE 2 - Deploy to Production
+# STAGE 3 - Deploy to Production
 # ========================
 - stage: DeployToProduction
   displayName: 'Deploy to Production'
@@ -61,8 +91,6 @@ stages:
   - job: DeployProductionJob
     displayName: 'Deploy to Production Job'
     steps:
-    - checkout: self
-
     - script: |
         echo "Deploying to production..."
       displayName: 'Run production deployment commands'
@@ -71,26 +99,21 @@ stages:
       displayName: 'Publish pipeline artifact'
       inputs:
         targetPath: '$(Pipeline.Workspace)'
-        ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:
-          artifact: 'prod'
-        ${{ else }}:
-          artifact: 'dev'
+        artifact: 'prod'
         publishLocation: 'pipeline'
 
 
 # ========================
-# STAGE 3 - Rollback
+# STAGE 4 - Rollback
 # ========================
 - stage: Rollback
   displayName: 'Rollback Stage'
   dependsOn: DeployToProduction
-  condition: failed('DeployToProduction')
+  condition: failed()
   jobs:
   - job: RollbackJob
     displayName: 'Rollback Job'
     steps:
-    - checkout: self
-
     - script: |
         echo "Rolling back the deployment..."
       displayName: 'Run rollback commands'
