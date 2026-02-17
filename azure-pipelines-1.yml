@@ -18,38 +18,50 @@ stages:
     steps:
     - script: |
         echo "Deploying to QA..."
-      displayName: 'Run deployment commands'
+      displayName: 'Run QA deployment commands'
 
   - job: WaitForValidation
     displayName: 'Wait for external validation'
     dependsOn: DeployQAJob
     pool: server
-    timeoutInMinutes: 4320
+    timeoutInMinutes: 4320   # 3 days max wait
     steps:
     - task: ManualValidation@1
-      timeoutInMinutes: 1440
+      timeoutInMinutes: 1440  # 1 day approval timeout
       inputs:
         notifyUsers: |
           DiphokoS@nra.co.za
           Mafaralalam@nra.co.za
         instructions: 'Please validate the build configuration and resume'
-        onTimeout: 'resume'
+        onTimeout: 'reject'   # Reject if no response
 
 
 # ========================
-# STAGE 2 - Deploy to Prod
+# STAGE 2 - Deploy to Production
 # ========================
 - stage: DeployToProduction
-  displayName: 'Deploy to Prod'
+  displayName: 'Deploy to Production'
   dependsOn: DeployToQA
   condition: succeeded()
   jobs:
+
   - job: DeployProductionJob
-    displayName: 'Deploy to Prod Job'
+    displayName: 'Deploy to Production Job'
     steps:
     - script: |
         echo "Deploying to production..."
       displayName: 'Run production deployment commands'
+
+    # Publish artifact after successful production deployment
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish pipeline artifact'
+      inputs:
+        targetPath: '$(Pipeline.Workspace)'
+        ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:
+          artifact: 'prod'
+        ${{ else }}:
+          artifact: 'dev'
+        publishLocation: 'pipeline'
 
 
 # ========================
@@ -58,7 +70,7 @@ stages:
 - stage: Rollback
   displayName: 'Rollback Stage'
   dependsOn: DeployToProduction
-  condition: failed()
+  condition: failed('DeployToProduction')
   jobs:
   - job: RollbackJob
     displayName: 'Rollback Job'
