@@ -6,13 +6,12 @@ pool:
 
 variables:
   buildConfiguration: 'Release'
-  azureServiceConnection: 'DevOps'  # Use exact service connection name
-
-stages:
+  azureServiceConnection: 'DevOps'  # Set your service connection name
 
 # =====================================
 # STAGE 1 - BUILD
 # =====================================
+stages:
 - stage: Build
   displayName: 'Build Stage'
   jobs:
@@ -22,7 +21,7 @@ stages:
 
     - checkout: self
 
-    # Install .NET 8 SDK
+    # Install .NET SDK
     - task: UseDotNet@2
       displayName: 'Install .NET 8 SDK'
       inputs:
@@ -44,7 +43,7 @@ stages:
         projects: '**/*.csproj'
         arguments: '--configuration $(buildConfiguration)'
 
-    # Publish web projects to artifact staging directory
+    # Publish web project to artifact staging directory
     - task: DotNetCoreCLI@2
       displayName: 'Publish Web Project'
       inputs:
@@ -53,13 +52,13 @@ stages:
         arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)'
         zipAfterPublish: true
 
-    # Debug - list published artifacts
+    # Debug: list published artifacts
     - script: |
         echo "Listing Artifact Staging Directory contents:"
         dir $(Build.ArtifactStagingDirectory) /s
       displayName: 'Debug - List Artifacts'
 
-    # Publish build artifact
+    # Publish pipeline artifact
     - task: PublishPipelineArtifact@1
       displayName: 'Publish Build Artifact'
       inputs:
@@ -80,20 +79,28 @@ stages:
     displayName: 'Deploy to QA'
     steps:
 
-    # Download artifact
+    # Download build artifact
     - download: current
       artifact: build
 
-    # Debug - list downloaded artifacts
+    # Debug: verify artifact exists
     - script: |
         echo "Listing downloaded build artifact in QA stage:"
         dir $(Pipeline.Workspace)/build /s
       displayName: 'Debug - List Downloaded Artifact'
 
-    # Placeholder for QA deployment commands
-    - script: |
-        echo "Deploying to QA environment..."
-      displayName: 'Run QA deployment commands'
+    # Deploy to QA slot
+    - task: AzureRmWebAppDeployment@4
+      displayName: 'Deploy to QA Slot'
+      inputs:
+        ConnectionType: 'AzureRM'
+        azureSubscription: $(azureServiceConnection)
+        appType: 'webApp'
+        WebAppName: 'Microsoft Azure Enterprise_SANRALHO'
+        deployToSlotOrASE: true
+        ResourceGroupName: 'Microsoft Azure Enterprise_SANRALHO'
+        SlotName: 'staging'
+        packageForLinux: '$(Pipeline.Workspace)/build/*.zip'
 
   - job: WaitForValidation
     displayName: 'Manual Approval'
@@ -123,11 +130,11 @@ stages:
     displayName: 'Deploy to Production'
     steps:
 
-    # Download artifact
+    # Download build artifact
     - download: current
       artifact: build
 
-    # Debug - confirm artifact
+    # Debug: verify artifact exists
     - script: |
         echo "Listing downloaded build artifact in Production stage:"
         dir $(Pipeline.Workspace)/build /s
@@ -135,7 +142,7 @@ stages:
 
     # Deploy to staging slot
     - task: AzureRmWebAppDeployment@4
-      displayName: 'Deploy to Staging Slot'
+      displayName: 'Deploy to Production Staging Slot'
       inputs:
         ConnectionType: 'AzureRM'
         azureSubscription: $(azureServiceConnection)
