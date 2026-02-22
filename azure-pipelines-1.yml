@@ -16,20 +16,19 @@ stages:
   displayName: 'Build Stage'
   jobs:
   - job: BuildJob
-    displayName: 'Restore and Build'
+    displayName: 'Restore, Build & Publish'
     steps:
 
-    # Ensure repo is checked out
     - checkout: self
 
-    # Show files (helps debugging if path issues occur)
     - script: |
         echo "Listing source directory contents"
         dir $(Build.SourcesDirectory) /s
       displayName: 'Debug - List files'
 
-    # Install .NET SDK (safe for .NET Core / .NET 6+)
+    # Install .NET 8 SDK
     - task: UseDotNet@2
+      displayName: 'Install .NET 8 SDK'
       inputs:
         packageType: 'sdk'
         version: '8.x'
@@ -50,7 +49,7 @@ stages:
         projects: '**/*.csproj'
         arguments: '--configuration $(buildConfiguration)'
 
-    # Publish
+    # Publish (Zip for deployment)
     - task: DotNetCoreCLI@2
       displayName: 'Publish'
       inputs:
@@ -58,7 +57,7 @@ stages:
         publishWebProjects: false
         projects: '**/*.csproj'
         arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)'
-        zipAfterPublish: false
+        zipAfterPublish: true
 
     # Publish artifact
     - task: PublishPipelineArtifact@1
@@ -113,9 +112,37 @@ stages:
   - job: DeployProductionJob
     displayName: 'Deploy to Production'
     steps:
+
+    # Download artifact from Build stage
+    - download: current
+      artifact: build
+
     - script: |
         echo "Deploying to Production environment..."
-      displayName: 'Run production deployment commands'
+      displayName: 'Start Production Deployment'
+
+    # Deploy to staging slot
+    - task: AzureRmWebAppDeployment@4
+      displayName: 'Deploy to Staging Slot'
+      inputs:
+        ConnectionType: 'AzureRM'
+        azureSubscription: 'DevOps'
+        appType: 'webApp'
+        WebAppName: 'dssdemo1-prod'
+        deployToSlotOrASE: true
+        ResourceGroupName: 'DemoRG'
+        SlotName: 'staging'
+        packageForLinux: '$(Pipeline.Workspace)/build/**/*.zip'
+
+    # Swap staging slot to production
+    - task: AzureAppServiceManage@0
+      displayName: 'Swap Staging to Production'
+      inputs:
+        azureSubscription: 'DevOps'
+        Action: 'Swap Slots'
+        WebAppName: 'dssdemo1-prod'
+        ResourceGroupName: 'DemoRG'
+        SourceSlot: 'staging'
 
 
 # =====================================
@@ -129,6 +156,16 @@ stages:
   - job: RollbackJob
     displayName: 'Rollback Deployment'
     steps:
+
     - script: |
         echo "Rolling back production deployment..."
-      displayName: 'Run rollback commands'
+      displayName: 'Start Rollback'
+
+    - task: AzureAppServiceManage@0
+      displayName: 'Swap Back to Staging'
+      inputs:
+        azureSubscription: 'DevOps'
+        Action: 'Swap Slots'
+        WebAppName: 'dssdemo1-prod'
+        ResourceGroupName: 'DemoRG'
+        SourceSlot: 'production'
