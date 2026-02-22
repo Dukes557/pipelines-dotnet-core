@@ -6,7 +6,7 @@ pool:
 
 variables:
   buildConfiguration: 'Release'
-  azureServiceConnection: 'DevOps'
+  azureServiceConnection: 'DevOps'  # Use exact service connection name
 
 stages:
 
@@ -29,14 +29,14 @@ stages:
         packageType: 'sdk'
         version: '8.x'
 
-    # Restore
+    # Restore dependencies
     - task: DotNetCoreCLI@2
       displayName: 'Restore'
       inputs:
         command: 'restore'
         projects: '**/*.csproj'
 
-    # Build
+    # Build solution
     - task: DotNetCoreCLI@2
       displayName: 'Build'
       inputs:
@@ -44,7 +44,7 @@ stages:
         projects: '**/*.csproj'
         arguments: '--configuration $(buildConfiguration)'
 
-    # Publish Web Project
+    # Publish web projects to artifact staging directory
     - task: DotNetCoreCLI@2
       displayName: 'Publish Web Project'
       inputs:
@@ -53,20 +53,19 @@ stages:
         arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)'
         zipAfterPublish: true
 
-    # Debug - Confirm ZIP exists
+    # Debug - list published artifacts
     - script: |
-        echo "Listing Artifact Staging Directory"
+        echo "Listing Artifact Staging Directory contents:"
         dir $(Build.ArtifactStagingDirectory) /s
       displayName: 'Debug - List Artifacts'
 
-    # Publish Pipeline Artifact
+    # Publish build artifact
     - task: PublishPipelineArtifact@1
       displayName: 'Publish Build Artifact'
       inputs:
         targetPath: '$(Build.ArtifactStagingDirectory)'
         artifact: 'build'
         publishLocation: 'pipeline'
-
 
 # =====================================
 # STAGE 2 - DEPLOY TO QA
@@ -80,9 +79,18 @@ stages:
   - job: DeployQAJob
     displayName: 'Deploy to QA'
     steps:
+
+    # Download artifact
     - download: current
       artifact: build
 
+    # Debug - list downloaded artifacts
+    - script: |
+        echo "Listing downloaded build artifact in QA stage:"
+        dir $(Pipeline.Workspace)/build /s
+      displayName: 'Debug - List Downloaded Artifact'
+
+    # Placeholder for QA deployment commands
     - script: |
         echo "Deploying to QA environment..."
       displayName: 'Run QA deployment commands'
@@ -101,7 +109,6 @@ stages:
           Mafaralalam@nra.co.za
         instructions: 'Please validate QA deployment before Production.'
         onTimeout: 'reject'
-
 
 # =====================================
 # STAGE 3 - DEPLOY TO PRODUCTION
@@ -122,8 +129,8 @@ stages:
 
     # Debug - confirm artifact
     - script: |
-        echo "Listing Pipeline Workspace"
-        dir $(Pipeline.Workspace) /s
+        echo "Listing downloaded build artifact in Production stage:"
+        dir $(Pipeline.Workspace)/build /s
       displayName: 'Debug - List Downloaded Artifact'
 
     # Deploy to staging slot
@@ -139,7 +146,7 @@ stages:
         SlotName: 'staging'
         packageForLinux: '$(Pipeline.Workspace)/build/*.zip'
 
-    # Swap staging to production
+    # Swap staging slot to production
     - task: AzureAppServiceManage@0
       displayName: 'Swap Staging to Production'
       inputs:
@@ -148,7 +155,6 @@ stages:
         WebAppName: 'dssdemo1-prod'
         ResourceGroupName: 'DemoRG'
         SourceSlot: 'staging'
-
 
 # =====================================
 # STAGE 4 - ROLLBACK (If Production Fails)
