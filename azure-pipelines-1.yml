@@ -80,7 +80,7 @@ stages:
         ConnectionType: 'AzureRM'
         azureSubscription: $(azureServiceConnection)
         appType: 'webApp'
-        WebAppName: '.azurewebsites.net'
+        WebAppName: 'Azure Resource Manager'
         ResourceGroupName: 'DevOps'
         deployToSlotOrASE: true
         SlotName: 'staging'
