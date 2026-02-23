@@ -6,7 +6,7 @@ pool:
 
 variables:
   buildConfiguration: 'Release'
-  azureServiceConnection: 'DevOps'  # Set your service connection name
+  azureServiceConnection: 'DevOps'
 
 # =====================================
 # STAGE 1 - BUILD
@@ -28,14 +28,14 @@ stages:
         packageType: 'sdk'
         version: '8.x'
 
-    # Restore dependencies
+    # Restore
     - task: DotNetCoreCLI@2
       displayName: 'Restore'
       inputs:
         command: 'restore'
         projects: '**/*.csproj'
 
-    # Build solution
+    # Build
     - task: DotNetCoreCLI@2
       displayName: 'Build'
       inputs:
@@ -43,22 +43,16 @@ stages:
         projects: '**/*.csproj'
         arguments: '--configuration $(buildConfiguration)'
 
-    # Publish web project to artifact staging directory
+    # Publish
     - task: DotNetCoreCLI@2
-      displayName: 'Publish Web Project'
+      displayName: 'Publish'
       inputs:
         command: 'publish'
         publishWebProjects: true
         arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)'
         zipAfterPublish: true
 
-    # Debug: list published artifacts
-    - script: |
-        echo "Listing Artifact Staging Directory contents:"
-        dir $(Build.ArtifactStagingDirectory) /s
-      displayName: 'Debug - List Artifacts'
-
-    # Publish pipeline artifact
+    # Publish artifact
     - task: PublishPipelineArtifact@1
       displayName: 'Publish Build Artifact'
       inputs:
@@ -74,22 +68,12 @@ stages:
   dependsOn: Build
   condition: succeeded()
   jobs:
-
   - job: DeployQAJob
-    displayName: 'Deploy to QA'
     steps:
 
-    # Download build artifact
     - download: current
       artifact: build
 
-    # Debug: verify artifact exists
-    - script: |
-        echo "Listing downloaded build artifact in QA stage:"
-        dir $(Pipeline.Workspace)/build /s
-      displayName: 'Debug - List Downloaded Artifact'
-
-    # Deploy to QA slot
     - task: AzureRmWebAppDeployment@4
       displayName: 'Deploy to QA Slot'
       inputs:
@@ -97,25 +81,10 @@ stages:
         azureSubscription: $(azureServiceConnection)
         appType: 'webApp'
         WebAppName: 'Microsoft Azure Enterprise_SANRALHO'
-        deployToSlotOrASE: true
         ResourceGroupName: 'Microsoft Azure Enterprise_SANRALHO'
+        deployToSlotOrASE: true
         SlotName: 'staging'
         packageForLinux: '$(Pipeline.Workspace)/build/*.zip'
-
-  - job: WaitForValidation
-    displayName: 'Manual Approval'
-    dependsOn: DeployQAJob
-    pool: server
-    timeoutInMinutes: 4320
-    steps:
-    - task: ManualValidation@1
-      timeoutInMinutes: 1440
-      inputs:
-        notifyUsers: |
-          DiphokoS@nra.co.za
-          Mafaralalam@nra.co.za
-        instructions: 'Please validate QA deployment before Production.'
-        onTimeout: 'reject'
 
 # =====================================
 # STAGE 3 - DEPLOY TO PRODUCTION
@@ -125,22 +94,12 @@ stages:
   dependsOn: DeployToQA
   condition: succeeded()
   jobs:
-
   - job: DeployProductionJob
-    displayName: 'Deploy to Production'
     steps:
 
-    # Download build artifact
     - download: current
       artifact: build
 
-    # Debug: verify artifact exists
-    - script: |
-        echo "Listing downloaded build artifact in Production stage:"
-        dir $(Pipeline.Workspace)/build /s
-      displayName: 'Debug - List Downloaded Artifact'
-
-    # Deploy to staging slot
     - task: AzureRmWebAppDeployment@4
       displayName: 'Deploy to Production Staging Slot'
       inputs:
@@ -148,12 +107,11 @@ stages:
         azureSubscription: $(azureServiceConnection)
         appType: 'webApp'
         WebAppName: 'Microsoft Azure Enterprise_SANRALHO'
-        deployToSlotOrASE: true
         ResourceGroupName: 'Microsoft Azure Enterprise_SANRALHO'
+        deployToSlotOrASE: true
         SlotName: 'staging'
         packageForLinux: '$(Pipeline.Workspace)/build/*.zip'
 
-    # Swap staging slot to production
     - task: AzureAppServiceManage@0
       displayName: 'Swap Staging to Production'
       inputs:
@@ -164,20 +122,15 @@ stages:
         SourceSlot: 'staging'
 
 # =====================================
-# STAGE 4 - ROLLBACK (If Production Fails)
+# STAGE 4 - ROLLBACK
 # =====================================
 - stage: Rollback
-  displayName: 'Rollback Stage'
+  displayName: 'Rollback'
   dependsOn: DeployToProduction
   condition: failed()
   jobs:
   - job: RollbackJob
-    displayName: 'Rollback Deployment'
     steps:
-
-    - script: |
-        echo "Rolling back production deployment..."
-      displayName: 'Start Rollback'
 
     - task: AzureAppServiceManage@0
       displayName: 'Swap Back to Staging'
