@@ -81,7 +81,7 @@ stages:
         azureSubscription: $(azureServiceConnection)
         appType: 'webApp'
         WebAppName: 'Microsoft Azure Enterprise_SANRALHO'
-        ResourceGroupName: 'DevOpsDev'
+        ResourceGroupName: 'DevOps'
         deployToSlotOrASE: true
         SlotName: 'staging'
         packageForLinux: '$(Pipeline.Workspace)/build/*.zip'
@@ -107,7 +107,7 @@ stages:
         azureSubscription: $(azureServiceConnection)
         appType: 'webApp'
         WebAppName: 'Microsoft Azure Enterprise_SANRALHO'
-        ResourceGroupName: 'DevOpsDev'
+        ResourceGroupName: 'DevOps'
         deployToSlotOrASE: true
         SlotName: 'staging'
         packageForLinux: '$(Pipeline.Workspace)/build/*.zip'
@@ -118,7 +118,7 @@ stages:
         azureSubscription: $(azureServiceConnection)
         Action: 'Swap Slots'
         WebAppName: 'Microsoft Azure Enterprise_SANRALHO'
-        ResourceGroupName: 'DevOpsDev'
+        ResourceGroupName: 'DevOps'
         SourceSlot: 'staging'
 
 # =====================================
@@ -138,5 +138,5 @@ stages:
         azureSubscription: $(azureServiceConnection)
         Action: 'Swap Slots'
         WebAppName: 'Microsoft Azure Enterprise_SANRALHO'
-        ResourceGroupName: 'DevOpsDev'
+        ResourceGroupName: 'DevOps'
         SourceSlot: 'production'
