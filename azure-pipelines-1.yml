@@ -80,7 +80,7 @@ stages:
         ConnectionType: 'AzureRM'
         azureSubscription: $(azureServiceConnection)
         appType: 'webApp'
-        WebAppName: 'Azure Resource Manager'
+        WebAppName: 'https://github.com/Dukes557/pipelines-dotnet-core'
         ResourceGroupName: 'DevOps'
         deployToSlotOrASE: true
         SlotName: 'staging'
@@ -117,7 +117,7 @@ stages:
       inputs:
         azureSubscription: $(azureServiceConnection)
         Action: 'Swap Slots'
-        WebAppName: '.azurewebsites.net'
+        WebAppName: 'https://github.com/Dukes557/pipelines-dotnet-core'
         ResourceGroupName: 'DevOps'
         SourceSlot: 'staging'
 
@@ -137,6 +137,6 @@ stages:
       inputs:
         azureSubscription: $(azureServiceConnection)
         Action: 'Swap Slots'
-        WebAppName: '.azurewebsites.net'
+        WebAppName: '.https://github.com/Dukes557/pipelines-dotnet-core'
         ResourceGroupName: 'DevOps'
         SourceSlot: 'production'
