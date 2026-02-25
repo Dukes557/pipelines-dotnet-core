@@ -6,7 +6,7 @@ pool:
 
 variables:
   buildConfiguration: 'Release'
-  azureServiceConnection: 'DevOps'   # MUST match Service Connection name exactly
+  azureServiceConnection: 'DevOps'   # Must match Service Connection name exactly
 
 # =====================================================
 # STAGE 1 - BUILD
@@ -52,7 +52,7 @@ stages:
         arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)'
         zipAfterPublish: true
 
-    # Publish pipeline artifact
+    # Publish Pipeline Artifact
     - task: PublishPipelineArtifact@1
       displayName: 'Publish Build Artifact'
       inputs:
@@ -61,71 +61,25 @@ stages:
         publishLocation: 'pipeline'
 
 # =====================================================
-# STAGE 2 - DEPLOY TO QA (Staging Slot)
+# STAGE 2 - DEPLOY TO PRODUCTION
 # =====================================================
-- stage: DeployToQA
-  displayName: 'Deploy to QA'
+- stage: DeployToProduction
+  displayName: 'Deploy to Production'
   dependsOn: Build
   condition: succeeded()
 
   jobs:
-  - job: DeployQAJob
-    displayName: 'Deploy to QA Slot'
+  - job: DeployProductionJob
+    displayName: 'Deploy to Azure App Service'
     steps:
 
     - download: current
       artifact: build
 
     - task: AzureWebApp@1
-      displayName: 'Deploy to QA Staging Slot'
+      displayName: 'Deploy Web App'
       inputs:
         azureSubscription: $(azureServiceConnection)
         appType: 'webApp'
         appName: 'DevopsDevWebApp'
-        deployToSlotOrASE: true
-        slotName: 'staging'
         package: '$(Pipeline.Workspace)/build/*.zip'
-
-# =====================================================
-# STAGE 3 - DEPLOY TO PRODUCTION
-# =====================================================
-- stage: DeployToProduction
-  displayName: 'Deploy to Production'
-  dependsOn: DeployToQA
-  condition: succeeded()
-
-  jobs:
-  - job: DeployProductionJob
-    displayName: 'Swap to Production'
-    steps:
-
-    - task: AzureAppServiceManage@0
-      displayName: 'Swap Staging Slot to Production'
-      inputs:
-        azureSubscription: $(azureServiceConnection)
-        Action: 'Swap Slots'
-        WebAppName: 'DevopsDevWebApp'
-        ResourceGroupName: 'DevOps'
-        SourceSlot: 'staging'
-
-# =====================================================
-# STAGE 4 - ROLLBACK (If Production Fails)
-# =====================================================
-- stage: Rollback
-  displayName: 'Rollback'
-  dependsOn: DeployToProduction
-  condition: failed()
-
-  jobs:
-  - job: RollbackJob
-    displayName: 'Rollback to Previous Version'
-    steps:
-
-    - task: AzureAppServiceManage@0
-      displayName: 'Swap Back to Staging'
-      inputs:
-        azureSubscription: $(azureServiceConnection)
-        Action: 'Swap Slots'
-        WebAppName: 'DevopsDevWebApp'
-        ResourceGroupName: 'DevOps'
-        SourceSlot: 'production'
