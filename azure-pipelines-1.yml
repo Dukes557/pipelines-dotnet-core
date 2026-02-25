@@ -6,11 +6,11 @@ pool:
 
 variables:
   buildConfiguration: 'Release'
-  azureServiceConnection: 'DevOps'
+  azureServiceConnection: 'DevOps'   # MUST match Service Connection name exactly
 
-# =====================================
+# =====================================================
 # STAGE 1 - BUILD
-# =====================================
+# =====================================================
 stages:
 - stage: Build
   displayName: 'Build Stage'
@@ -21,7 +21,7 @@ stages:
 
     - checkout: self
 
-    # Install .NET SDK
+    # Install .NET 8 SDK
     - task: UseDotNet@2
       displayName: 'Install .NET 8 SDK'
       inputs:
@@ -43,7 +43,7 @@ stages:
         projects: '**/*.csproj'
         arguments: '--configuration $(buildConfiguration)'
 
-    # Publish
+    # Publish (Creates ZIP automatically)
     - task: DotNetCoreCLI@2
       displayName: 'Publish'
       inputs:
@@ -52,7 +52,7 @@ stages:
         arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)'
         zipAfterPublish: true
 
-    # Publish artifact
+    # Publish pipeline artifact
     - task: PublishPipelineArtifact@1
       displayName: 'Publish Build Artifact'
       inputs:
@@ -60,76 +60,65 @@ stages:
         artifact: 'build'
         publishLocation: 'pipeline'
 
-# =====================================
-# STAGE 2 - DEPLOY TO QA
-# =====================================
+# =====================================================
+# STAGE 2 - DEPLOY TO QA (Staging Slot)
+# =====================================================
 - stage: DeployToQA
   displayName: 'Deploy to QA'
   dependsOn: Build
   condition: succeeded()
+
   jobs:
   - job: DeployQAJob
+    displayName: 'Deploy to QA Slot'
     steps:
 
     - download: current
       artifact: build
 
-    - task: AzureRmWebAppDeployment@4
-      displayName: 'Deploy to QA Slot'
+    - task: AzureWebApp@1
+      displayName: 'Deploy to QA Staging Slot'
       inputs:
-        ConnectionType: 'AzureRM'
         azureSubscription: $(azureServiceConnection)
         appType: 'webApp'
-        WebAppName: 'https://github.com/Dukes557/pipelines-dotnet-core'
-        ResourceGroupName: 'DevOps'
+        appName: 'DevopsDevWebApp'
         deployToSlotOrASE: true
-        SlotName: 'staging'
-        packageForLinux: '$(Pipeline.Workspace)/build/*.zip'
+        slotName: 'staging'
+        package: '$(Pipeline.Workspace)/build/*.zip'
 
-# =====================================
+# =====================================================
 # STAGE 3 - DEPLOY TO PRODUCTION
-# =====================================
+# =====================================================
 - stage: DeployToProduction
   displayName: 'Deploy to Production'
   dependsOn: DeployToQA
   condition: succeeded()
+
   jobs:
   - job: DeployProductionJob
+    displayName: 'Swap to Production'
     steps:
 
-    - download: current
-      artifact: build
-
-    - task: AzureRmWebAppDeployment@4
-      displayName: 'Deploy to Production Staging Slot'
-      inputs:
-        ConnectionType: 'AzureRM'
-        azureSubscription: $(azureServiceConnection)
-        appType: 'webApp'
-        WebAppName: 'Microsoft Azure Enterprise_SANRALHO'
-        ResourceGroupName: 'DevOps'
-        deployToSlotOrASE: true
-        SlotName: 'staging'
-        packageForLinux: '$(Pipeline.Workspace)/build/*.zip'
-
     - task: AzureAppServiceManage@0
-      displayName: 'Swap Staging to Production'
+      displayName: 'Swap Staging Slot to Production'
       inputs:
         azureSubscription: $(azureServiceConnection)
         Action: 'Swap Slots'
-        WebAppName: 'https://github.com/Dukes557/pipelines-dotnet-core'
+        WebAppName: 'DevopsDevWebApp'
         ResourceGroupName: 'DevOps'
         SourceSlot: 'staging'
 
-# =====================================
-# STAGE 4 - ROLLBACK
-# =====================================
+# =====================================================
+# STAGE 4 - ROLLBACK (If Production Fails)
+# =====================================================
 - stage: Rollback
   displayName: 'Rollback'
   dependsOn: DeployToProduction
   condition: failed()
+
   jobs:
   - job: RollbackJob
+    displayName: 'Rollback to Previous Version'
     steps:
 
     - task: AzureAppServiceManage@0
@@ -137,6 +126,6 @@ stages:
       inputs:
         azureSubscription: $(azureServiceConnection)
         Action: 'Swap Slots'
-        WebAppName: '.https://github.com/Dukes557/pipelines-dotnet-core'
+        WebAppName: 'DevopsDevWebApp'
         ResourceGroupName: 'DevOps'
         SourceSlot: 'production'
