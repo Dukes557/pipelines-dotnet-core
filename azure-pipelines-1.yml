@@ -6,7 +6,9 @@ pool:
 
 variables:
   buildConfiguration: 'Release'
-  azureServiceConnection: 'DevOps'   # Must match Service Connection name exactly
+  azureServiceConnection: 'DevOps'     # Must match service connection name exactly
+  webAppName: 'DevopsDevWebApp'        # Your App Service name
+  resourceGroupName: 'Your-Resource-Group'  # <-- CHANGE THIS
 
 # =====================================================
 # STAGE 1 - BUILD
@@ -21,21 +23,18 @@ stages:
 
     - checkout: self
 
-    # Install .NET 8 SDK
     - task: UseDotNet@2
       displayName: 'Install .NET 8 SDK'
       inputs:
         packageType: 'sdk'
         version: '8.x'
 
-    # Restore
     - task: DotNetCoreCLI@2
       displayName: 'Restore'
       inputs:
         command: 'restore'
         projects: '**/*.csproj'
 
-    # Build
     - task: DotNetCoreCLI@2
       displayName: 'Build'
       inputs:
@@ -43,7 +42,6 @@ stages:
         projects: '**/*.csproj'
         arguments: '--configuration $(buildConfiguration)'
 
-    # Publish (Creates ZIP automatically)
     - task: DotNetCoreCLI@2
       displayName: 'Publish'
       inputs:
@@ -52,7 +50,6 @@ stages:
         arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)'
         zipAfterPublish: true
 
-    # Publish Pipeline Artifact
     - task: PublishPipelineArtifact@1
       displayName: 'Publish Build Artifact'
       inputs:
@@ -61,25 +58,84 @@ stages:
         publishLocation: 'pipeline'
 
 # =====================================================
-# STAGE 2 - DEPLOY TO PRODUCTION
+# STAGE 2 - DEPLOY TO STAGING SLOT
 # =====================================================
-- stage: DeployToProduction
-  displayName: 'Deploy to Production'
+- stage: DeployToStaging
+  displayName: 'Deploy to Staging Slot'
   dependsOn: Build
   condition: succeeded()
 
   jobs:
-  - job: DeployProductionJob
-    displayName: 'Deploy to Azure App Service'
-    steps:
+  - deployment: DeployStaging
+    displayName: 'Deploy to Staging Environment'
+    environment: 'Staging'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
 
-    - download: current
-      artifact: build
+          - download: current
+            artifact: build
 
-    - task: AzureWebApp@1
-      displayName: 'Deploy Web App'
-      inputs:
-        azureSubscription: $(azureServiceConnection)
-        appType: 'webApp'
-        appName: 'DevopsDevWebApp'
-        package: '$(Pipeline.Workspace)/build/*.zip'
+          - task: AzureWebApp@1
+            displayName: 'Deploy to Staging Slot'
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              appType: 'webApp'
+              appName: $(webAppName)
+              deployToSlotOrASE: true
+              resourceGroupName: $(resourceGroupName)
+              slotName: 'staging'
+              package: '$(Pipeline.Workspace)/build/**/*.zip'
+
+# =====================================================
+# STAGE 3 - SWAP STAGING TO PRODUCTION
+# =====================================================
+- stage: SwapToProduction
+  displayName: 'Swap Staging to Production'
+  dependsOn: DeployToStaging
+  condition: succeeded()
+
+  jobs:
+  - deployment: SwapSlots
+    displayName: 'Swap Slots'
+    environment: 'Production'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+
+          - task: AzureAppServiceManage@0
+            displayName: 'Swap Staging -> Production'
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              Action: 'Swap Slots'
+              WebAppName: $(webAppName)
+              ResourceGroupName: $(resourceGroupName)
+              SourceSlot: 'staging'
+
+# =====================================================
+# STAGE 4 - ROLLBACK (MANUAL APPROVAL VIA ENVIRONMENT)
+# =====================================================
+- stage: Rollback
+  displayName: 'Rollback Production'
+  dependsOn: []
+  condition: succeeded()
+
+  jobs:
+  - deployment: RollbackDeployment
+    displayName: 'Rollback via Slot Swap'
+    environment: 'Production'   # Add approval here in Azure DevOps UI
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+
+          - task: AzureAppServiceManage@0
+            displayName: 'Swap Production Back to Staging'
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              Action: 'Swap Slots'
+              WebAppName: $(webAppName)
+              ResourceGroupName: $(resourceGroupName)
+              SourceSlot: 'staging'
